@@ -1,0 +1,4 @@
+ai_ter/
+__pycache__/
+*.gguf
+.DS_Store
