@@ -5,3 +5,4 @@ __pycache__/
 .env.env
 .env
 zero-nl2cmds-v1.Q4_k_M.gguf
+.idea/
