@@ -1,90 +1,79 @@
-import subprocess
-import os
-from llama_cpp import Llama
-from huggingface_hub import hf_hub_download
+# The main entry point and router for the Zero AI Terminal.
 
-# --- Configuration ---
-REPO_ID = "Sanjayyy06/zero-nl2cmds-v1"
-MODEL_NAME = "zero-nl2cmds-v1.Q4_K_M.gguf"
+import argparse
+import sys
+from dotenv import load_dotenv
+from groq import Groq
+from utils.constants import colors
 
-# ANSI color codes
-class colors:
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    BLUE = '\033[94m'
-    END = '\033[0m'
+# --- 1. Load .env file at the VERY start ---
+# This makes environment variables (like GROQ_API_KEY) available
+load_dotenv()
 
-# --- Get the Model ---
-# This new section handles finding or downloading the model file.
-model_path = ""
-# First, check if the model exists in the same directory as the script
-local_model_path = os.path.join(os.path.dirname(__file__), MODEL_NAME)
-
-if os.path.exists(local_model_path):
-    print(f"{colors.BLUE}Found model locally at: {local_model_path}{colors.END}")
-    model_path = local_model_path
-else:
-    try:
-        print(f"{colors.BLUE}Model not found locally. Downloading from '{REPO_ID}'...{colors.END}")
-        # Download the model from Hugging Face Hub. It will be cached automatically.
-        model_path = hf_hub_download(
-            repo_id=REPO_ID,
-            filename=MODEL_NAME
-        )
-        print(f"{colors.GREEN}Download complete! Model is at: {model_path}{colors.END}")
-    except Exception as e:
-        print(f"{colors.RED}Failed to download model: {e}{colors.END}")
-        exit()
-
-# --- Load the Model ---
-print(f"{colors.BLUE}Loading model...{colors.END}")
-try:
-    llm = Llama(
-        model_path=model_path,
-        n_ctx=2048,
-        n_gpu_layers=-1, # Offload all layers to GPU on Apple Silicon
-        verbose=False
+def main():
+    parser = argparse.ArgumentParser(
+        description="Zero AI Terminal Assistant",
+        formatter_class=argparse.RawTextHelpFormatter
     )
-except Exception as e:
-    print(f"{colors.RED}Error loading model: {e}{colors.END}")
-    exit()
+    
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--analyze",
+        metavar="URL",
+        type=str,
+        help="Analyze a GitHub repository URL."
+    )
+    group.add_argument(
+        "--git",
+        metavar="TASK",
+        type=str,
+        help="Run an AI-powered git task (e.g., 'commit')."
+    )
 
-print(f"{colors.GREEN}Model loaded! Welcome to Zero AI Terminal.{colors.END}")
+    args = parser.parse_args()
+    
+    # --- 2. The Main Router Logic ---
+    # We now load models and clients *inside* the logic block,
+    # so we only load what we need for the specific task.
 
-# --- Main Application Loop ---
-# (This part remains exactly the same)
-while True:
-    try:
-        natural_language_query = input(f"\n{colors.YELLOW}>> {colors.END}")
-        if natural_language_query.lower() in ["exit", "quit"]:
-            break
-
-        prompt = f"Instruction: {natural_language_query}\nOutput:"
-        output = llm(
-            prompt, max_tokens=100, stop=["\n"], temperature=0.1, echo=False
-        )
-        command = output["choices"][0]["text"].strip()
-
-        if not command:
-            print(f"{colors.RED}Sorry, I couldn't generate a command.{colors.END}")
-            continue
-
-        print(f"   {colors.BLUE}Suggested command: {colors.END}{colors.GREEN}{command}{colors.END}")
-        confirmation = input(f"   {colors.YELLOW}Execute? [y/N]: {colors.END}").lower()
-
-        if confirmation == 'y':
-            print(f"   {colors.BLUE}Executing...{colors.END}")
-            result = subprocess.run(command, shell=True, capture_output=True, text=True)
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(f"{colors.RED}{result.stderr}{colors.END}")
+    if args.analyze:
+        # --- Analyze Tool ---
+        # This tool only needs the Groq client.
+        try:
+            # We initialize the client *after* load_dotenv() has run
+            groq_client = Groq() 
+            from tools.analyze_tool import run_github_analyzer
+            # We pass the client to the tool
+            run_github_analyzer(groq_client, args.analyze)
+        except Exception as e:
+            print(f"{colors.RED}Failed to start analyze tool: {e}{colors.END}")
+            print(f"{colors.YELLOW}Make sure 'GROQ_API_KEY' is in your .env file.{colors.END}")
+    
+    elif args.git:
+        # --- Git Tool ---
+        # This tool also uses the Groq client.
+        if args.git.lower() == 'commit':
+            try:
+                groq_client = Groq()
+                from tools.git_tool import run_git_commit
+                # We pass the client to the tool
+                run_git_commit(groq_client)
+            except Exception as e:
+                print(f"{colors.RED}Failed to start git tool: {e}{colors.END}")
+                print(f"{colors.YELLOW}Make sure 'GROQ_API_KEY' is in your .env file.{colors.END}")
         else:
-            print(f"   {colors.BLUE}Execution cancelled.{colors.END}")
+            print(f"{colors.RED}Unknown git task: '{args.git}'. Did you mean 'commit'?{colors.END}")
+    
+    else:
+        # --- Default Shell Tool ---
+        # This is the only tool that needs the local Llama model.
+        try:
+            from utils.model_loader import load_model
+            from tools.shell_tool import start_interactive_loop
+            llm = load_model()
+            start_interactive_loop(llm)
+        except Exception as e:
+            print(f"{colors.RED}Failed to start interactive shell: {e}{colors.END}")
 
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        break
-    except Exception as e:
-        print(f"{colors.RED}An error occurred: {e}{colors.END}")
+if __name__ == "__main__":
+    main()
