@@ -17,7 +17,7 @@ Zero is built on a modular `tools` architecture, allowing for the easy addition 
 ### 1. Interactive AI Shell
 Run your terminal with natural language. Zero translates your requests into bash commands and asks for confirmation before executing.
 
-![Demo of the interactive shell](images/Screenshot 2025-11-13 at 1.36.14 PM.png)
+![Demo of the interactive shell](images/interactive_term.png)
 
 
 ### 2. GitHub Repository Analyzer
